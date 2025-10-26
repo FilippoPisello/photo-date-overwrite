@@ -1,10 +1,17 @@
-from dataclasses import dataclass, field
-from pathlib import Path
-from photos_creation_date_overwrite import INPUT_DIR, OUTPUT_DIR
-import piexif
 import re
-from datetime import datetime
 import shutil
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+import piexif
+import yaml
+
+from photos_creation_date_overwrite import CONFIG_FILE, INPUT_DIR, OUTPUT_DIR
+
+# Supported image file extensions
+SUPPORTED_EXTENSIONS = ["*.jpg", "*.JPG", "*.jpeg", "*.JPEG"]
+
 
 @dataclass
 class UpdateReport:
@@ -12,7 +19,6 @@ class UpdateReport:
     added: int = field(default=0, init=False)
     failed: int = field(default=0, init=False)
     preserved: int = field(default=0, init=False)
-
 
     def as_text(self) -> str:
         return (
@@ -22,7 +28,11 @@ class UpdateReport:
             f"Preserved: {self.preserved}\n"
         )
 
+
 def main():
+    # Load configuration
+    config = _load_config()
+
     # Process all .jpg files in input directory
     jpg_files = _read_files()
     if not jpg_files:
@@ -30,7 +40,7 @@ def main():
         return
 
     # create output subdirectory with timestamp
-    output_subdir = OUTPUT_DIR / datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_subdir = OUTPUT_DIR / datetime.now().strftime("%Y%m%d_%H%M%S")
     output_subdir.mkdir(parents=True, exist_ok=True)
 
     report = UpdateReport()
@@ -81,11 +91,33 @@ def main():
     print("Update Report:")
     print(report.as_text())
 
+    # Clear input folder if configured
+    if config.get("clear_input_after_run", False):
+        _clear_input_folder(jpg_files)
+
+
+def _load_config() -> dict:
+    """Load configuration from config.yml"""
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+        return config
+    except FileNotFoundError:
+        print(f"Warning: Config file not found at {CONFIG_FILE}. Using defaults.")
+        return {}
+    except Exception as e:
+        print(f"Warning: Error loading config file: {e}. Using defaults.")
+        return {}
+
+
 def _read_files() -> list[Path]:
-    files = (list(INPUT_DIR.glob('*.jpg')) + list(INPUT_DIR.glob('*.JPG')) +
-             list(INPUT_DIR.glob('*.jpeg')) + list(INPUT_DIR.glob('*.JPEG')))
+    """Read all supported image files from the input directory"""
+    files = []
+    for pattern in SUPPORTED_EXTENSIONS:
+        files.extend(INPUT_DIR.glob(pattern))
     print(f"Found {len(files)} image(s) to process")
     return files
+
 
 def _extract_date_from_filename(filename) -> datetime | None:
     """Extract date from filename.
@@ -94,13 +126,14 @@ def _extract_date_from_filename(filename) -> datetime | None:
     - IMG-20201107-WA0029.jpg
     - IMG_20201107_WA0029.jpg
     """
-    pattern = r'IMG[-_](\d{8})[-_]'
+    pattern = r"IMG[-_](\d{8})[-_]"
     match = re.search(pattern, filename)
     if match:
         date_str = match.group(1)
         # Parse YYYYMMDD format
-        return datetime.strptime(date_str, '%Y%m%d')
+        return datetime.strptime(date_str, "%Y%m%d")
     return None
+
 
 def _get_exif_date(image_path):
     """Get the date taken from EXIF data"""
@@ -108,22 +141,25 @@ def _get_exif_date(image_path):
         exif_dict = piexif.load(str(image_path))
 
         # Check if EXIF section exists
-        if 'Exif' not in exif_dict:
+        if "Exif" not in exif_dict:
             print(f"  No EXIF section found in {image_path.name}")
             return None
 
-        if piexif.ExifIFD.DateTimeOriginal in exif_dict['Exif']:
-            date_str = exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal].decode('utf-8')
-            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-        elif '0th' in exif_dict and piexif.ImageIFD.DateTime in exif_dict['0th']:
-            date_str = exif_dict['0th'][piexif.ImageIFD.DateTime].decode('utf-8')
-            return datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+        if piexif.ExifIFD.DateTimeOriginal in exif_dict["Exif"]:
+            date_str = exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal].decode(
+                "utf-8"
+            )
+            return datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
+        elif "0th" in exif_dict and piexif.ImageIFD.DateTime in exif_dict["0th"]:
+            date_str = exif_dict["0th"][piexif.ImageIFD.DateTime].decode("utf-8")
+            return datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
         else:
             print(f"  No date fields found in EXIF data for {image_path.name}")
 
     except Exception as e:
         print(f"Error reading EXIF data from {image_path}: {e}")
     return None
+
 
 def _update_exif_date(image_path, new_date, output_path):
     """Update the EXIF date and save to output path"""
@@ -132,18 +168,18 @@ def _update_exif_date(image_path, new_date, output_path):
         exif_dict = piexif.load(str(image_path))
 
         # Initialize EXIF section if it doesn't exist
-        if 'Exif' not in exif_dict:
-            exif_dict['Exif'] = {}
-        if '0th' not in exif_dict:
-            exif_dict['0th'] = {}
+        if "Exif" not in exif_dict:
+            exif_dict["Exif"] = {}
+        if "0th" not in exif_dict:
+            exif_dict["0th"] = {}
 
         # Format date for EXIF (YYYY:MM:DD HH:MM:SS)
-        date_str = new_date.strftime('%Y:%m:%d 09:00:00')
+        date_str = new_date.strftime("%Y:%m:%d 09:00:00")
 
         # Update date fields
-        exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal] = date_str.encode('utf-8')
-        exif_dict['0th'][piexif.ImageIFD.DateTime] = date_str.encode('utf-8')
-        exif_dict['Exif'][piexif.ExifIFD.DateTimeDigitized] = date_str.encode('utf-8')
+        exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = date_str.encode("utf-8")
+        exif_dict["0th"][piexif.ImageIFD.DateTime] = date_str.encode("utf-8")
+        exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = date_str.encode("utf-8")
 
         # Convert back to bytes
         exif_bytes = piexif.dump(exif_dict)
@@ -155,6 +191,16 @@ def _update_exif_date(image_path, new_date, output_path):
     except Exception as e:
         print(f"Error updating EXIF data for {image_path}: {e}")
         return False
+
+
+def _clear_input_folder(files_to_remove: list[Path]):
+    """Clear only the files that were processed by the tool"""
+    files_removed = 0
+    for file_path in files_to_remove:
+        if file_path.exists():
+            file_path.unlink()
+            files_removed += 1
+    print(f"\nCleared {files_removed} processed file(s) from input folder.")
 
 
 if __name__ == "__main__":

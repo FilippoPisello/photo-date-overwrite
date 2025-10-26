@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = [{ name = "FilippoPisello", email = "filippo.pisello@live.it" }]
 requires-python = ">=3.12"
-dependencies = ["piexif (>=1.1.3,<2.0.0)"]
+dependencies = ["piexif (>=1.1.3,<2.0.0)", "pyyaml (>=6.0,<7.0)"]
 
 
 [build-system]
