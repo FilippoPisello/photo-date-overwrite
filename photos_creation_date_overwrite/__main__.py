@@ -19,6 +19,7 @@ class UpdateReport:
     added: int = field(default=0, init=False)
     failed: int = field(default=0, init=False)
     preserved: int = field(default=0, init=False)
+    skipped: int = field(default=0, init=False)
 
     def as_text(self) -> str:
         return (
@@ -26,6 +27,7 @@ class UpdateReport:
             f"Added: {self.added}\n"
             f"Failed: {self.failed}\n"
             f"Preserved: {self.preserved}\n"
+            f"Skipped: {self.skipped}"
         )
 
 
@@ -54,6 +56,7 @@ def main():
             print(f"  Could not extract date from filename: {image_path.name}")
             # Copy file as-is to output directory
             shutil.copy2(image_path, output_path)
+            report.skipped += 1
             continue
 
         print(f"  Date from filename: {filename_date.strftime('%Y-%m-%d')}")
