@@ -29,16 +29,21 @@ def main():
         print("No .jpg files found in input directory")
         return
 
+    # create output subdirectory with timestamp
+    output_subdir = OUTPUT_DIR / datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_subdir.mkdir(parents=True, exist_ok=True)
+
     report = UpdateReport()
     for image_path in jpg_files:
         print(f"\nProcessing: {image_path.name}")
+        output_path = output_subdir / image_path.name
 
         # Extract date from filename
         filename_date = _extract_date_from_filename(image_path.name)
         if not filename_date:
             print(f"  Could not extract date from filename: {image_path.name}")
             # Copy file as-is to output directory
-            shutil.copy2(image_path, OUTPUT_DIR / image_path.name)
+            shutil.copy2(image_path, output_path)
             continue
 
         print(f"  Date from filename: {filename_date.strftime('%Y-%m-%d')}")
@@ -51,30 +56,28 @@ def main():
             # Compare dates (only compare the date part, not time)
             if filename_date.date() == exif_date.date():
                 print("  Dates match - copying file without changes")
-                shutil.copy2(image_path, OUTPUT_DIR / image_path.name)
+                shutil.copy2(image_path, output_path)
                 report.preserved += 1
             else:
                 print("  Dates don't match - updating EXIF data")
-                output_path = OUTPUT_DIR / image_path.name
                 if _update_exif_date(image_path, filename_date, output_path):
                     print("  Successfully updated EXIF date")
                     report.updated += 1
                 else:
                     print("  Failed to update EXIF date - copying original")
-                    shutil.copy2(image_path, OUTPUT_DIR / image_path.name)
+                    shutil.copy2(image_path, output_path)
                     report.failed += 1
         else:
             print("  No EXIF date found - adding date from filename")
-            output_path = OUTPUT_DIR / image_path.name
             if _update_exif_date(image_path, filename_date, output_path):
                 print("  Successfully added EXIF date")
                 report.added += 1
             else:
                 print("  Failed to add EXIF date - copying original")
-                shutil.copy2(image_path, OUTPUT_DIR / image_path.name)
+                shutil.copy2(image_path, output_path)
                 report.failed += 1
 
-    print(f"\nProcessing complete. Check the '{OUTPUT_DIR}' directory for results.")
+    print(f"\nProcessing complete. Check the '{output_subdir}' directory for results.")
     print("Update Report:")
     print(report.as_text())
 
